@@ -251,7 +251,7 @@ fun PrinterListScreen(
                     // Discovered Devices (All Bluetooth Devices)
                     // Add info text
                     Text(
-                        text = "All Bluetooth devices nearby. Blue printer icon indicates likely thermal printers.",
+                        text = "All Bluetooth devices nearby. Green VIRTUAL tags indicate emulated printers for testing.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                         modifier = Modifier.padding(8.dp)
@@ -280,7 +280,9 @@ fun PrinterListScreen(
                                     onSave = { makeDefault ->
                                         viewModel.savePrinter(printer, makeDefault)
                                     },
-                                    onPair = { viewModel.pairPrinter(printer.address) }
+                                    onPair = { viewModel.pairPrinter(printer.address) },
+                                    onConnect = { viewModel.connectToDiscoveredPrinter(printer.address) },
+                                    isVirtualPrinter = viewModel.isVirtualPrinter(printer.address)
                                 )
                             }
                         }
@@ -295,7 +297,9 @@ fun PrinterListScreen(
 fun DiscoveredPrinterItem(
     printer: pos.helper.thermalprinter.data.printer.PrinterInfo,
     onSave: (Boolean) -> Unit,
-    onPair: () -> Unit
+    onPair: () -> Unit,
+    onConnect: () -> Unit,
+    isVirtualPrinter: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -323,6 +327,17 @@ fun DiscoveredPrinterItem(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
+                        if (isVirtualPrinter) {
+                            Text(
+                                text = "VIRTUAL",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Green,
+                                modifier = Modifier.background(Color(0x2000FF00), RoundedCornerShape(2.dp)).padding(2.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                        }
+
                         Text(
                             text = printer.type.name,
                             fontSize = 12.sp,
@@ -348,7 +363,18 @@ fun DiscoveredPrinterItem(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (!printer.isPaired) {
+                    // For virtual printers, show connect button instead of pair
+                    if (isVirtualPrinter) {
+                        Button(
+                            onClick = onConnect,
+                            modifier = Modifier.sizeIn(minWidth = 80.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF00AA00)
+                            )
+                        ) {
+                            Text("Connect")
+                        }
+                    } else if (!printer.isPaired) {
                         OutlinedButton(
                             onClick = onPair,
                             modifier = Modifier.sizeIn(minWidth = 80.dp)

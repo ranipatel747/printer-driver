@@ -1,5 +1,7 @@
 package pos.helper.thermalprinter.printer
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
@@ -9,6 +11,7 @@ import android.hardware.usb.UsbManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.annotation.RequiresPermission
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -21,6 +24,7 @@ import pos.helper.thermalprinter.printer.VirtualPrinterManager
 import java.io.IOException
 import java.io.OutputStream
 import java.net.Socket
+import java.util.Date
 import java.util.UUID
 
 class PrinterManager private constructor(private val context: Context) : PrinterInterface {
@@ -29,6 +33,7 @@ class PrinterManager private constructor(private val context: Context) : Printer
         private const val TAG = "PrinterManager"
         private const val BLUETOOTH_SPP_UUID = "00001101-0000-1000-8000-00805F9B34FB"
 
+        @SuppressLint("StaticFieldLeak")
         @Volatile
         private var instance: PrinterManager? = null
 
@@ -54,6 +59,7 @@ class PrinterManager private constructor(private val context: Context) : Printer
         VirtualPrinterManager.getInstance(context)
     }
 
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     override suspend fun connect(): Boolean {
         return try {
             // First check if we should connect to a virtual printer
@@ -84,6 +90,7 @@ class PrinterManager private constructor(private val context: Context) : Printer
         }
     }
 
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private suspend fun connectBluetooth(): Boolean {
         return try {
             val adapter = BluetoothAdapter.getDefaultAdapter()
@@ -154,6 +161,7 @@ class PrinterManager private constructor(private val context: Context) : Printer
         }
     }
 
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     override suspend fun printReceipt(orderData: OrderData, printerWidth: String): Boolean {
         return try {
             if (!isConnected) {
@@ -229,6 +237,7 @@ class PrinterManager private constructor(private val context: Context) : Printer
     }
 
     // Test print function
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     suspend fun testPrint(): Boolean {
         return try {
             if (!isConnected) {
@@ -252,7 +261,7 @@ class PrinterManager private constructor(private val context: Context) : Printer
                         tax = 0.16,
                         total = 2.15,
                         paymentMethod = "Cash",
-                        timestamp = java.util.Date().toString()
+                        timestamp = Date().toString()
                     )
                     Log.i(TAG, "Test print to virtual printer: ${it.getPrinterName()}")
                     return it.printReceipt(testOrderData, "58mm")

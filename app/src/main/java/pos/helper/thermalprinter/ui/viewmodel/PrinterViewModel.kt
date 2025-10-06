@@ -78,6 +78,10 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         return bluetoothScanner.isBluetoothEnabled()
     }
 
+    fun isVirtualPrinter(address: String): Boolean {
+        return bluetoothScanner.isVirtualPrinter(address)
+    }
+
     fun pairPrinter(address: String) {
         viewModelScope.launch {
             _connectionStatus.value = "Pairing..."
@@ -133,20 +137,67 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
             if (savedPrinter != null) {
                 _connectionStatus.value = "Connecting..."
 
-                // First connect via PrinterManager
-                val success = when (savedPrinter.type) {
-                    pos.helper.thermalprinter.data.printer.PrinterType.BLUETOOTH -> {
-                        printerManager.setConnectionType("bluetooth")
-                        printerManager.connect()
+                try {
+                    // First connect via PrinterManager
+                    val success = when (savedPrinter.type) {
+                        pos.helper.thermalprinter.data.printer.PrinterType.BLUETOOTH -> {
+                            printerManager.setConnectionType("bluetooth")
+                            printerManager.setBluetoothAddress(address) // Set the address!
+                            printerManager.connect()
+                        }
+                        else -> false
                     }
-                    else -> false
-                }
 
-                if (success) {
-                    _connectionStatus.value = "Connected to ${savedPrinter.name}"
-                } else {
-                    _connectionStatus.value = "Connection failed"
+                    if (success) {
+                        _connectionStatus.value = "Connected to ${savedPrinter.name}"
+                    } else {
+                        _connectionStatus.value = "Connection failed"
+                    }
+                } catch (e: Exception) {
+                    Log.e("PrinterViewModel", "Connection error", e)
+                    _connectionStatus.value = "Connection error: ${e.message}"
                 }
+            } else {
+                _connectionStatus.value = "Printer not found in saved list"
+            }
+        }
+    }
+
+    fun connectToDiscoveredPrinter(address: String) {
+        viewModelScope.launch {
+            val discoveredPrinter = _discoveredPrinters.value.find { it.address == address }
+            if (discoveredPrinter != null) {
+                _connectionStatus.value = "Connecting..."
+
+                try {
+                    // Check if it's a virtual printer
+                    if (bluetoothScanner.isVirtualPrinter(address)) {
+                        // Connect to virtual printer
+                        val success = bluetoothScanner.connectVirtualPrinter(address)
+                        if (success) {
+                            printerManager.setConnectionType("bluetooth")
+                            printerManager.setBluetoothAddress(address)
+                            _connectionStatus.value = "Connected to virtual printer: ${discoveredPrinter.name}"
+                        } else {
+                            _connectionStatus.value = "Failed to connect to virtual printer"
+                        }
+                    } else {
+                        // Connect to regular Bluetooth printer
+                        printerManager.setConnectionType("bluetooth")
+                        printerManager.setBluetoothAddress(address)
+                        val success = printerManager.connect()
+                        if (success) {
+                            _connectionStatus.value = "Connected to ${discoveredPrinter.name}"
+                        } else {
+                            _connectionStatus.value = "Connection failed"
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("PrinterViewModel", "Connection error", e)
+                    _connectionStatus.value = "Connection error: ${e.message}"
+                }
+            } else {
+                _connectionStatus.value = "Printer not found in discovered list"
             }
         }
     }
@@ -168,8 +219,18 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
     fun testPrint() {
         viewModelScope.launch {
-            val success = printerManager.testPrint()
-            _connectionStatus.value = if (success) "Test printed" else "Test print failed"
+            try {
+                if (!printerManager.isConnected()) {
+                    _connectionStatus.value = "No printer connected - please connect first"
+                    return@launch
+                }
+
+                val success = printerManager.testPrint()
+                _connectionStatus.value = if (success) "Test printed successfully" else "Test print failed"
+            } catch (e: Exception) {
+                Log.e("PrinterViewModel", "Test print error", e)
+                _connectionStatus.value = "Test print error: ${e.message}"
+            }
         }
     }
 
