@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.BluetoothDisabled
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -247,7 +248,15 @@ fun PrinterListScreen(
                         }
                     }
                 } else {
-                    // Discovered Printers
+                    // Discovered Devices (All Bluetooth Devices)
+                    // Add info text
+                    Text(
+                        text = "All Bluetooth devices nearby. Blue printer icon indicates likely thermal printers.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(8.dp)
+                    )
+
                     if (discoveredPrinters.isEmpty()) {
                         Box(
                             modifier = Modifier
@@ -256,7 +265,7 @@ fun PrinterListScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (isScanning) "Scanning for printers..." else "No printers found",
+                                text = if (isScanning) "Scanning for devices..." else "No devices found",
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                 textAlign = TextAlign.Center
                             )
@@ -319,6 +328,14 @@ fun DiscoveredPrinterItem(
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
+                        if (printer.isLikelyPrinter) {
+                            Icon(
+                                Icons.Default.Print,
+                                contentDescription = "Likely Printer",
+                                tint = Color.Blue,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                         if (printer.isPaired) {
                             Icon(
                                 Icons.Outlined.CheckCircle,
@@ -343,7 +360,7 @@ fun DiscoveredPrinterItem(
                         onClick = { onSave(false) },
                         modifier = Modifier.sizeIn(minWidth = 80.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Save")
+                        Icon(Icons.Default.Add, contentDescription = "Save as Printer")
                         Spacer(Modifier.width(4.dp))
                         Text("Save")
                     }

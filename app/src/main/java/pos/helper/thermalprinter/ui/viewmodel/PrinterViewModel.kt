@@ -50,11 +50,21 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
+            _isScanning.value = true
             bluetoothScanner.startScan()
 
-            // Collect discovered printers
-            bluetoothScanner.discoveredPrinters.collect { printers ->
-                _discoveredPrinters.value = printers
+            // Collect discovered printers in a separate coroutine
+            launch {
+                bluetoothScanner.discoveredPrinters.collect { printers ->
+                    _discoveredPrinters.value = printers
+                }
+            }
+
+            // Update scanning state when scan completes in a separate coroutine
+            launch {
+                bluetoothScanner.scanState.collect { isScanning ->
+                    _isScanning.value = isScanning
+                }
             }
         }
     }

@@ -6,7 +6,8 @@ data class PrinterInfo(
     val type: PrinterType,
     var isPaired: Boolean = false,
     var isConnected: Boolean = false,
-    var isDefault: Boolean = false
+    var isDefault: Boolean = false,
+    val isLikelyPrinter: Boolean = false
 )
 
 enum class PrinterType {

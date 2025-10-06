@@ -60,6 +60,7 @@ class BluetoothScanner(private val context: Context) {
         }
 
         _scanState.value = true
+        _discoveredPrinters.value = emptyList() // Clear previous results
         foundDevices.clear()
 
         // First, get paired devices
@@ -76,23 +77,23 @@ class BluetoothScanner(private val context: Context) {
     @SuppressLint("MissingPermission")
     private fun getPairedDevices() {
         val pairedDevices = bluetoothAdapter?.bondedDevices ?: return
+        Log.d(TAG, "Found ${pairedDevices.size} paired devices")
 
-        val printers = pairedDevices
-            .filter { isThermalPrinter(it) }
-            .map {
+        val devices = pairedDevices.map { device ->
                 PrinterInfo(
-                    name = it.name ?: "Unknown",
-                    address = it.address,
+                    name = device.name ?: "Unknown",
+                    address = device.address,
                     type = PrinterType.BLUETOOTH,
-                    isPaired = true
+                    isPaired = true,
+                    isLikelyPrinter = isThermalPrinter(device)
                 )
             }
 
         val currentList = _discoveredPrinters.value.toMutableList()
-        printers.forEach { printer ->
-            if (!foundDevices.contains(printer.address)) {
-                foundDevices.add(printer.address)
-                currentList.add(printer)
+        devices.forEach { device ->
+            if (!foundDevices.contains(device.address)) {
+                foundDevices.add(device.address)
+                currentList.add(device)
             }
         }
 
@@ -109,13 +110,15 @@ class BluetoothScanner(private val context: Context) {
                         val device: BluetoothDevice? =
                             intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
                         device?.let {
-                            if (isThermalPrinter(it) && !foundDevices.contains(it.address)) {
+                            if (!foundDevices.contains(it.address)) {
+                                Log.d(TAG, "Found device: ${it.name} (${it.address})")
                                 foundDevices.add(it.address)
                                 val printer = PrinterInfo(
                                     name = it.name ?: "Unknown",
                                     address = it.address,
                                     type = PrinterType.BLUETOOTH,
-                                    isPaired = false
+                                    isPaired = false,
+                                    isLikelyPrinter = isThermalPrinter(it)
                                 )
 
                                 val currentList = _discoveredPrinters.value.toMutableList()
@@ -131,12 +134,12 @@ class BluetoothScanner(private val context: Context) {
 
         bluetoothAdapter?.startDiscovery()
 
-        // Stop scan after 10 seconds
+        // Stop scan after 15 seconds
         handler.postDelayed({
             bluetoothAdapter?.cancelDiscovery()
             context.unregisterReceiver(receiver)
             _scanState.value = false
-        }, 10000)
+        }, 15000)
     }
 
     @SuppressLint("MissingPermission")
@@ -146,13 +149,15 @@ class BluetoothScanner(private val context: Context) {
         scanCallback = object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val device = result.device
-                if (isThermalPrinter(device) && !foundDevices.contains(device.address)) {
+                if (!foundDevices.contains(device.address)) {
+                    Log.d(TAG, "Found LE device: ${device.name} (${device.address})")
                     foundDevices.add(device.address)
                     val printer = PrinterInfo(
                         name = device.name ?: "Unknown",
                         address = device.address,
                         type = PrinterType.BLUETOOTH,
-                        isPaired = false
+                        isPaired = false,
+                        isLikelyPrinter = isThermalPrinter(device)
                     )
 
                     val currentList = _discoveredPrinters.value.toMutableList()
@@ -169,10 +174,10 @@ class BluetoothScanner(private val context: Context) {
 
         leScanner.startScan(scanFilters, scanSettings, scanCallback)
 
-        // Stop scan after 10 seconds
+        // Stop scan after 15 seconds
         handler.postDelayed({
             stopScan()
-        }, 10000)
+        }, 15000)
     }
 
     @SuppressLint("MissingPermission")
