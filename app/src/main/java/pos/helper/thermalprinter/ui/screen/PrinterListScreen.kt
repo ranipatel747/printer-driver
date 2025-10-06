@@ -15,9 +15,11 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.BluetoothDisabled
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Error
+import androidx.compose.material.icons.outlined.PhonelinkRing
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,23 +34,36 @@ import kotlinx.coroutines.flow.collectLatest
 import pos.helper.thermalprinter.data.printer.PrinterType
 import pos.helper.thermalprinter.ui.viewmodel.PrinterViewModel
 
+enum class PrinterTab {
+    VIRTUAL,
+    PAIRED,
+    NEARBY
+}
+
 @Composable
 fun PrinterListScreen(
     viewModel: PrinterViewModel = viewModel(),
     onBack: () -> Unit
 ) {
-    val discoveredPrinters by viewModel.discoveredPrinters.collectAsState()
+    val virtualPrinters by viewModel.virtualPrinters.collectAsState()
+    val pairedPrinters by viewModel.pairedPrinters.collectAsState()
+    val nearbyPrinters by viewModel.nearbyPrinters.collectAsState()
     val savedPrinters by viewModel.savedPrinters.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
     val defaultPrinter by viewModel.defaultPrinter.collectAsState()
     val connectionStatus by viewModel.connectionStatus.collectAsState()
 
-    var showSavedPrinters by remember { mutableStateOf(true) }
+    var selectedTab by remember { mutableStateOf(PrinterTab.VIRTUAL) }
 
     LaunchedEffect(Unit) {
         viewModel.savedPrinters.collectLatest {
             // Refresh data when saved printers change
         }
+    }
+
+    // Start scanning when the screen is opened to get initial data
+    LaunchedEffect(Unit) {
+        viewModel.startScan()
     }
 
     Column(
@@ -141,42 +156,98 @@ fun PrinterListScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Toggle Buttons
-        Row(
+        // Tab Header
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
         ) {
-            Button(
-                onClick = {
-                    showSavedPrinters = true
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (showSavedPrinters) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                ),
-                modifier = Modifier.weight(1f)
+            TabRow(
+                selectedTabIndex = selectedTab.ordinal,
+                containerColor = Color.Transparent
             ) {
-                Text("Saved Printers")
-            }
-            Button(
-                onClick = {
-                    showSavedPrinters = false
-                    if (!isScanning) {
-                        viewModel.startScan()
+                Tab(
+                    selected = selectedTab == PrinterTab.VIRTUAL,
+                    onClick = { selectedTab = PrinterTab.VIRTUAL },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Virtual")
+                            if (virtualPrinters.isNotEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "(${virtualPrinters.size})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    },
+                    icon = {
+                        Icon(
+                            Icons.Default.Print,
+                            contentDescription = "Virtual Printers"
+                        )
                     }
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (!showSavedPrinters) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer
-                ),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Discover")
+                )
+                Tab(
+                    selected = selectedTab == PrinterTab.PAIRED,
+                    onClick = { selectedTab = PrinterTab.PAIRED },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Paired")
+                            if (pairedPrinters.isNotEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "(${pairedPrinters.size})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    },
+                    icon = {
+                        Icon(
+                            Icons.Default.Bluetooth,
+                            contentDescription = "Paired Devices"
+                        )
+                    }
+                )
+                Tab(
+                    selected = selectedTab == PrinterTab.NEARBY,
+                    onClick = {
+                        selectedTab = PrinterTab.NEARBY
+                        if (!isScanning) {
+                            viewModel.startScan()
+                        }
+                    },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Nearby")
+                            if (nearbyPrinters.isNotEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "(${nearbyPrinters.size})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    },
+                    icon = {
+                        Icon(
+                            Icons.Outlined.PhonelinkRing,
+                            contentDescription = "Nearby Devices"
+                        )
+                    }
+                )
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
 
-        // Search Button for Discover mode
-        if (!showSavedPrinters) {
+        // Scan control for Nearby tab
+        if (selectedTab == PrinterTab.NEARBY) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -199,10 +270,24 @@ fun PrinterListScreen(
                         contentDescription = if (isScanning) "Stop" else "Search"
                     )
                     Spacer(Modifier.width(8.dp))
-                    Text(if (isScanning) "Stop Scanning" else "Start Scanning")
+                    Text(if (isScanning) "Stop Scanning" else "Scan for Devices")
+                }
+
+                if (nearbyPrinters.isNotEmpty()) {
+                    OutlinedButton(
+                        onClick = { viewModel.startScan() },
+                        modifier = Modifier.weight(0.5f)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Refresh"
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Refresh")
+                    }
                 }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(8.dp))
         }
 
         // Printers List
@@ -215,75 +300,127 @@ fun PrinterListScreen(
             Column(
                 modifier = Modifier.padding(8.dp)
             ) {
-                if (showSavedPrinters) {
-                    // Saved Printers
-                    if (savedPrinters.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No saved printers",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(savedPrinters) { printer ->
-                                SavedPrinterItem(
-                                    printer = printer,
-                                    isDefault = printer.address == defaultPrinter?.address,
-                                    onConnect = { viewModel.connectToPrinter(printer.address) },
-                                    onSetDefault = { viewModel.setDefaultPrinter(printer.address) },
-                                    onRemove = { viewModel.removePrinter(printer.address) },
-                                    onTestPrint = { viewModel.testPrint() },
-                                    onDisconnect = { viewModel.disconnectPrinter() }
+                when (selectedTab) {
+                    PrinterTab.VIRTUAL -> {
+                        // Virtual Printers Tab
+                        Text(
+                            text = "Virtual printers for testing purposes. These don't require physical hardware.",
+                            fontSize = 12.sp,
+                            color = Color.Green,
+                            modifier = Modifier.padding(8.dp)
+                        )
+
+                        if (virtualPrinters.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No virtual printers available",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center
                                 )
+                            }
+                        } else {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(virtualPrinters) { printer ->
+                                    DiscoveredPrinterItem(
+                                        printer = printer,
+                                        onSave = { makeDefault ->
+                                            viewModel.savePrinter(printer, makeDefault)
+                                        },
+                                        onPair = { },
+                                        onConnect = { viewModel.connectToDiscoveredPrinter(printer.address) },
+                                        isVirtualPrinter = true,
+                                        showSaveButton = true
+                                    )
+                                }
                             }
                         }
                     }
-                } else {
-                    // Discovered Devices (All Bluetooth Devices)
-                    // Add info text
-                    Text(
-                        text = "All Bluetooth devices nearby. Green VIRTUAL tags indicate emulated printers for testing.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(8.dp)
-                    )
 
-                    if (discoveredPrinters.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = if (isScanning) "Scanning for devices..." else "No devices found",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(discoveredPrinters) { printer ->
-                                DiscoveredPrinterItem(
-                                    printer = printer,
-                                    onSave = { makeDefault ->
-                                        viewModel.savePrinter(printer, makeDefault)
-                                    },
-                                    onPair = { viewModel.pairPrinter(printer.address) },
-                                    onConnect = { viewModel.connectToDiscoveredPrinter(printer.address) },
-                                    isVirtualPrinter = viewModel.isVirtualPrinter(printer.address)
+                    PrinterTab.PAIRED -> {
+                        // Paired Devices Tab
+                        Text(
+                            text = "Bluetooth devices that are already paired with your device.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(8.dp)
+                        )
+
+                        if (pairedPrinters.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No paired Bluetooth printers",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center
                                 )
+                            }
+                        } else {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(pairedPrinters) { printer ->
+                                    DiscoveredPrinterItem(
+                                        printer = printer,
+                                        onSave = { makeDefault ->
+                                            viewModel.savePrinter(printer, makeDefault)
+                                        },
+                                        onPair = { },
+                                        onConnect = { viewModel.connectToDiscoveredPrinter(printer.address) },
+                                        isVirtualPrinter = false,
+                                        showSaveButton = true
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    PrinterTab.NEARBY -> {
+                        // Nearby Devices Tab
+                        Text(
+                            text = "Unpaired Bluetooth devices nearby. You need to pair them first before connecting.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(8.dp)
+                        )
+
+                        if (nearbyPrinters.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(200.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isScanning) "Scanning for nearby devices..." else "No nearby devices found",
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        } else {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(nearbyPrinters) { printer ->
+                                    DiscoveredPrinterItem(
+                                        printer = printer,
+                                        onSave = { }, // Can't save unpaired printers
+                                        onPair = { viewModel.pairPrinter(printer.address) },
+                                        onConnect = { viewModel.pairPrinter(printer.address) }, // First pair then connect
+                                        isVirtualPrinter = false,
+                                        showSaveButton = false // Don't show save button for unpaired devices
+                                    )
+                                }
                             }
                         }
                     }
@@ -299,7 +436,8 @@ fun DiscoveredPrinterItem(
     onSave: (Boolean) -> Unit,
     onPair: () -> Unit,
     onConnect: () -> Unit,
-    isVirtualPrinter: Boolean = false
+    isVirtualPrinter: Boolean = false,
+    showSaveButton: Boolean = true
 ) {
     Card(
         modifier = Modifier.fillMaxWidth()
@@ -381,14 +519,26 @@ fun DiscoveredPrinterItem(
                         ) {
                             Text("Pair")
                         }
+                    } else {
+                        // For paired devices, show Connect button
+                        OutlinedButton(
+                            onClick = onConnect,
+                            modifier = Modifier.sizeIn(minWidth = 80.dp)
+                        ) {
+                            Text("Connect")
+                        }
                     }
-                    Button(
-                        onClick = { onSave(false) },
-                        modifier = Modifier.sizeIn(minWidth = 80.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "Save as Printer")
-                        Spacer(Modifier.width(4.dp))
-                        Text("Save")
+
+                    // Only show Save button if allowed
+                    if (showSaveButton) {
+                        Button(
+                            onClick = { onSave(false) },
+                            modifier = Modifier.sizeIn(minWidth = 80.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Save as Printer")
+                            Spacer(Modifier.width(4.dp))
+                            Text("Save")
+                        }
                     }
                 }
             }

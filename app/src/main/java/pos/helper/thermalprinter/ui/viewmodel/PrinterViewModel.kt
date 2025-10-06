@@ -16,6 +16,10 @@ import pos.helper.thermalprinter.data.printer.SavedPrinter
 import pos.helper.thermalprinter.printer.PrinterManager
 
 class PrinterViewModel(application: Application) : AndroidViewModel(application) {
+    companion object {
+        private const val TAG = "PrinterViewModel"
+    }
+
     @SuppressLint("StaticFieldLeak")
     private val context = application.applicationContext
 
@@ -38,6 +42,16 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     private val _connectionStatus = MutableStateFlow("Not connected")
     val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
 
+    // New categorized printer lists
+    private val _virtualPrinters = MutableStateFlow<List<PrinterInfo>>(emptyList())
+    val virtualPrinters: StateFlow<List<PrinterInfo>> = _virtualPrinters.asStateFlow()
+
+    private val _pairedPrinters = MutableStateFlow<List<PrinterInfo>>(emptyList())
+    val pairedPrinters: StateFlow<List<PrinterInfo>> = _pairedPrinters.asStateFlow()
+
+    private val _nearbyPrinters = MutableStateFlow<List<PrinterInfo>>(emptyList())
+    val nearbyPrinters: StateFlow<List<PrinterInfo>> = _nearbyPrinters.asStateFlow()
+
     init {
         loadSavedPrinters()
         loadDefaultPrinter()
@@ -57,6 +71,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
             launch {
                 bluetoothScanner.discoveredPrinters.collect { printers ->
                     _discoveredPrinters.value = printers
+                    categorizePrinters(printers)
                 }
             }
 
@@ -69,9 +84,23 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private fun categorizePrinters(printers: List<PrinterInfo>) {
+        val virtual = printers.filter { bluetoothScanner.isVirtualPrinter(it.address) }
+        val paired = printers.filter { it.isPaired && !bluetoothScanner.isVirtualPrinter(it.address) }
+        val nearby = printers.filter { !it.isPaired && !bluetoothScanner.isVirtualPrinter(it.address) }
+
+        _virtualPrinters.value = virtual
+        _pairedPrinters.value = paired
+        _nearbyPrinters.value = nearby
+
+        Log.d(TAG, "Categorized printers: ${virtual.size} virtual, ${paired.size} paired, ${nearby.size} nearby")
+    }
+
     fun stopScan() {
         bluetoothScanner.stopScan()
         _isScanning.value = false
+        // Clear nearby devices when scanning stops, but keep virtual and paired
+        _nearbyPrinters.value = emptyList()
     }
 
     fun isBluetoothEnabled(): Boolean {
