@@ -15,6 +15,9 @@ import kotlinx.coroutines.launch
 import pos.helper.thermalprinter.data.websocket.WebSocketMessage
 import pos.helper.thermalprinter.data.websocket.OrderData
 import pos.helper.thermalprinter.data.websocket.PrinterStatus
+import pos.helper.thermalprinter.data.websocket.OrderItem
+import pos.helper.thermalprinter.printer.VirtualBluetoothPrinter
+import pos.helper.thermalprinter.printer.VirtualPrinterManager
 import java.io.IOException
 import java.io.OutputStream
 import java.net.Socket
@@ -40,13 +43,35 @@ class PrinterManager private constructor(private val context: Context) : Printer
     private var connectionType: String = "none"
     private var printerName: String = "Unknown"
     private var isConnected: Boolean = false
+    private var currentDeviceAddress: String? = null
 
     private var bluetoothSocket: BluetoothSocket? = null
     private var networkSocket: Socket? = null
     private var usbDevice: UsbDevice? = null
+    private var virtualPrinter: VirtualBluetoothPrinter? = null
+
+    private val virtualPrinterManager: VirtualPrinterManager by lazy {
+        VirtualPrinterManager.getInstance(context)
+    }
 
     override suspend fun connect(): Boolean {
         return try {
+            // First check if we should connect to a virtual printer
+            if (connectionType == "bluetooth" && currentDeviceAddress != null) {
+                virtualPrinter = virtualPrinterManager.getVirtualPrinter(currentDeviceAddress!!)
+                if (virtualPrinter != null) {
+                    Log.i(TAG, "Connecting to virtual printer: ${virtualPrinter!!.getPrinterName()}")
+                    val result = virtualPrinter!!.connect()
+                    if (result) {
+                        isConnected = true
+                        printerName = virtualPrinter!!.getPrinterName()
+                        return result
+                    } else {
+                        Log.w(TAG, "Failed to connect to virtual printer, falling back to real Bluetooth")
+                    }
+                }
+            }
+
             when (connectionType) {
                 "bluetooth" -> connectBluetooth()
                 "usb" -> connectUSB()
@@ -114,6 +139,11 @@ class PrinterManager private constructor(private val context: Context) : Printer
 
     override suspend fun disconnect() {
         try {
+            // Disconnect virtual printer if connected
+            virtualPrinter?.disconnect()
+            virtualPrinter = null
+
+            // Disconnect real connections
             outputStream?.close()
             bluetoothSocket?.close()
             networkSocket?.close()
@@ -131,6 +161,15 @@ class PrinterManager private constructor(private val context: Context) : Printer
             }
 
             if (isConnected) {
+                // Use virtual printer if connected
+                virtualPrinter?.let {
+                    Log.i(TAG, "Printing to virtual printer: ${it.getPrinterName()}")
+                    val result = it.printReceipt(orderData, printerWidth)
+                    Log.i(TAG, "Virtual print result: $result")
+                    return result
+                }
+
+                // Use real printer if no virtual printer
                 val receiptData = EscPosCommands.createReceiptBytes(orderData, printerWidth)
                 outputStream?.write(receiptData)
                 outputStream?.flush()
@@ -151,7 +190,7 @@ class PrinterManager private constructor(private val context: Context) : Printer
     }
 
     override fun getStatus(): PrinterStatus {
-        return PrinterStatus(
+        return virtualPrinter?.getStatus() ?: PrinterStatus(
             connected = isConnected,
             type = connectionType,
             name = printerName,
@@ -169,7 +208,20 @@ class PrinterManager private constructor(private val context: Context) : Printer
     }
 
     fun setBluetoothAddress(address: String) {
-        // For future use when allowing specific device selection
+        currentDeviceAddress = address
+        Log.i(TAG, "Set Bluetooth address: $address")
+    }
+
+    fun isVirtualPrinterConnected(): Boolean {
+        return virtualPrinter != null && virtualPrinter?.isConnected() == true
+    }
+
+    fun getVirtualPrintHistory(): List<VirtualBluetoothPrinter.PrintJob> {
+        return virtualPrinter?.getPrintHistory() ?: emptyList()
+    }
+
+    fun clearVirtualPrintHistory() {
+        virtualPrinter?.clearPrintHistory()
     }
 
     fun setNetworkPrinter(ip: String, port: Int) {
@@ -184,6 +236,29 @@ class PrinterManager private constructor(private val context: Context) : Printer
             }
 
             if (isConnected) {
+                // Use virtual printer if connected
+                virtualPrinter?.let {
+                    val testOrderData = OrderData(
+                        orderId = "TEST_${System.currentTimeMillis()}",
+                        customer = "Test Customer",
+                        items = listOf(
+                            OrderItem(
+                                name = "Test Item",
+                                qty = 1,
+                                price = 1.99
+                            )
+                        ),
+                        subtotal = 1.99,
+                        tax = 0.16,
+                        total = 2.15,
+                        paymentMethod = "Cash",
+                        timestamp = java.util.Date().toString()
+                    )
+                    Log.i(TAG, "Test print to virtual printer: ${it.getPrinterName()}")
+                    return it.printReceipt(testOrderData, "58mm")
+                }
+
+                // Use real printer if no virtual printer
                 val testData = "TEST PRINT\n".toByteArray() +
                                "This is a test\n".toByteArray() +
                                "Printer: $printerName\n".toByteArray() +

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import pos.helper.thermalprinter.data.printer.PrinterInfo
 import pos.helper.thermalprinter.data.printer.PrinterType
+import pos.helper.thermalprinter.printer.VirtualPrinterManager
 import java.util.*
 
 class BluetoothScanner(private val context: Context) {
@@ -46,22 +47,30 @@ class BluetoothScanner(private val context: Context) {
     val scanState: StateFlow<Boolean> = _scanState
 
     private val foundDevices = mutableSetOf<String>()
+    private val virtualPrinterManager: VirtualPrinterManager by lazy {
+        VirtualPrinterManager.getInstance(context)
+    }
 
     @SuppressLint("MissingPermission")
     fun startScan() {
+        _scanState.value = true
+        _discoveredPrinters.value = emptyList() // Clear previous results
+        foundDevices.clear()
+
+        // Always include virtual printers
+        Log.d(TAG, "Adding virtual printers to scan results")
+        addVirtualPrinters()
+
+        // Check if real Bluetooth is available and enabled
         if (bluetoothAdapter == null) {
-            Log.e(TAG, "Bluetooth not supported")
+            Log.e(TAG, "Bluetooth not supported, only showing virtual printers")
             return
         }
 
         if (!bluetoothAdapter!!.isEnabled) {
-            Log.w(TAG, "Bluetooth not enabled")
+            Log.w(TAG, "Bluetooth not enabled, only showing virtual printers")
             return
         }
-
-        _scanState.value = true
-        _discoveredPrinters.value = emptyList() // Clear previous results
-        foundDevices.clear()
 
         // First, get paired devices
         getPairedDevices()
@@ -242,6 +251,62 @@ class BluetoothScanner(private val context: Context) {
 
     fun isBluetoothEnabled(): Boolean {
         return bluetoothAdapter?.isEnabled == true
+    }
+
+    // Virtual printer management functions
+    fun createVirtualPrinter(name: String, address: String? = null): String {
+        return virtualPrinterManager.createVirtualPrinter(name, address)
+    }
+
+    fun removeVirtualPrinter(address: String) {
+        virtualPrinterManager.removeVirtualPrinter(address)
+    }
+
+    fun isVirtualPrinter(address: String): Boolean {
+        return virtualPrinterManager.isVirtualPrinter(address)
+    }
+
+    suspend fun connectVirtualPrinter(address: String): Boolean {
+        return virtualPrinterManager.connectToPrinter(address)
+    }
+
+    suspend fun disconnectVirtualPrinter(address: String) {
+        virtualPrinterManager.disconnectFromPrinter(address)
+    }
+
+    fun getVirtualPrintersCount(): Int {
+        return virtualPrinterManager.getVirtualPrinterCount()
+    }
+
+    fun makeVirtualPrintersDiscoverable(count: Int = 3) {
+        virtualPrinterManager.makeDiscoverable(count)
+        // Refresh scan results to show new virtual printers
+        addVirtualPrinters()
+    }
+
+    private fun addVirtualPrinters() {
+        val virtualPrinters = virtualPrinterManager.getAllVirtualPrinters()
+        Log.d(TAG, "Adding ${virtualPrinters.size} virtual printers to scan results")
+
+        virtualPrinters.forEach { printer ->
+            if (!foundDevices.contains(printer.getDeviceAddress())) {
+                Log.d(TAG, "Adding virtual printer: ${printer.getPrinterName()}")
+                foundDevices.add(printer.getDeviceAddress())
+
+                val printerInfo = PrinterInfo(
+                    name = printer.getPrinterName(),
+                    address = printer.getDeviceAddress(),
+                    type = PrinterType.BLUETOOTH,
+                    isPaired = true,
+                    isConnected = printer.isConnected(),
+                    isLikelyPrinter = true
+                )
+
+                val currentList = _discoveredPrinters.value.toMutableList()
+                currentList.add(printerInfo)
+                _discoveredPrinters.value = currentList
+            }
+        }
     }
 
     companion object {
