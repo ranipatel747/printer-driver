@@ -8,10 +8,14 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import pos.helper.thermalprinter.R
 import pos.helper.thermalprinter.data.websocket.WebSocketMessage
+import pos.helper.thermalprinter.MainActivity
 import pos.helper.thermalprinter.data.websocket.OrderData
 import pos.helper.thermalprinter.data.websocket.PrinterStatus
 import pos.helper.thermalprinter.printer.PrinterManager
@@ -61,6 +65,8 @@ class WebSocketService : Service(), PrinterWebSocketServer.PrinterStatusListener
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(TAG, "WebSocket service starting with flags: $flags, startId: $startId")
+
         intent?.getIntExtra("port", DEFAULT_PORT)?.let { port ->
             if (currentPort != port) {
                 currentPort = port
@@ -71,6 +77,9 @@ class WebSocketService : Service(), PrinterWebSocketServer.PrinterStatusListener
         if (webSocketServer == null) {
             startWebSocketServer(currentPort)
         }
+
+        // Schedule service restart in case it's killed
+        scheduleServiceRestart()
 
         return START_STICKY
     }
@@ -101,11 +110,68 @@ class WebSocketService : Service(), PrinterWebSocketServer.PrinterStatusListener
         }
     }
 
+    private fun scheduleServiceRestart() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val restartIntent = Intent(this, WebSocketService::class.java)
+            restartIntent.putExtra("port", currentPort)
+
+            val pendingIntent = PendingIntent.getService(
+                this,
+                WebSocketService::class.java.name.hashCode(),
+                restartIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+
+            // Schedule restart every 30 seconds
+            alarmManager.setRepeating(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                System.currentTimeMillis() + 30000, // Start after 30 seconds
+                30000, // Repeat every 30 seconds
+                pendingIntent
+            )
+            Log.i(TAG, "Service restart scheduled")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule service restart", e)
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        Log.i(TAG, "WebSocket service being destroyed")
+
+        // Schedule restart before cleanup
+        scheduleRestartOnDestroy()
+
         webSocketServer?.stopServer()
         serviceScope.cancel()
         Log.i(TAG, "WebSocket service destroyed")
+    }
+
+    private fun scheduleRestartOnDestroy() {
+        try {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val restartIntent = Intent(this, WebSocketService::class.java)
+            restartIntent.putExtra("port", currentPort)
+
+            val pendingIntent = PendingIntent.getService(
+                this,
+                RestartReceiver.REQUEST_CODE,
+                restartIntent,
+                PendingIntent.FLAG_IMMUTABLE
+            )
+
+            // Schedule restart in 5 seconds
+            val triggerTime = System.currentTimeMillis() + 5000
+            alarmManager.set(
+                AlarmManager.RTC_WAKEUP,
+                triggerTime,
+                pendingIntent
+            )
+            Log.i(TAG, "Scheduled service restart in 5 seconds")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule restart on destroy", e)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -116,7 +182,9 @@ class WebSocketService : Service(), PrinterWebSocketServer.PrinterStatusListener
         serviceScope.launch {
             updateNotification("Printing: ${orderData.orderId}")
 
-            val success = withContext(Dispatchers.IO) {
+            val success = withContext(Dispatchers.IO) @androidx.annotation.RequiresPermission(
+                android.Manifest.permission.BLUETOOTH_CONNECT
+            ) {
                 try {
                     printerManager.printReceipt(orderData, printerWidth)
                 } catch (e: Exception) {
@@ -175,6 +243,9 @@ class WebSocketService : Service(), PrinterWebSocketServer.PrinterStatusListener
             ).apply {
                 description = "WebSocket server for thermal printer"
                 setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
+                importance = NotificationManager.IMPORTANCE_LOW
             }
 
             val notificationManager = getSystemService(NotificationManager::class.java)
@@ -189,6 +260,21 @@ class WebSocketService : Service(), PrinterWebSocketServer.PrinterStatusListener
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setOnlyAlertOnce(true)
+            .addAction(
+                R.drawable.ic_launcher_foreground,
+                "Open App",
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    },
+                    PendingIntent.FLAG_IMMUTABLE
+                )
+            )
             .build()
     }
 
@@ -199,6 +285,21 @@ class WebSocketService : Service(), PrinterWebSocketServer.PrinterStatusListener
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setOnlyAlertOnce(true)
+            .addAction(
+                R.drawable.ic_launcher_foreground,
+                "Open App",
+                PendingIntent.getActivity(
+                    this,
+                    0,
+                    Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    },
+                    PendingIntent.FLAG_IMMUTABLE
+                )
+            )
             .build()
 
         val notificationManager = getSystemService(NotificationManager::class.java)
