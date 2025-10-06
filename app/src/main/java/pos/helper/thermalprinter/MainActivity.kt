@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,9 +34,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import pos.helper.thermalprinter.service.WebSocketService
+import pos.helper.thermalprinter.ui.screen.PrinterListScreen
 import pos.helper.thermalprinter.ui.theme.ThermalPrinterTheme
 
 class MainActivity : ComponentActivity() {
@@ -55,7 +61,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ThermalPrinterTheme {
-                MainContent()
+                AppNavigation()
             }
         }
 
@@ -126,7 +132,26 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    fun MainContent() {
+    fun AppNavigation() {
+        val navController = rememberNavController()
+
+        NavHost(
+            navController = navController,
+            startDestination = "home"
+        ) {
+            composable("home") {
+                MainContent(navController)
+            }
+            composable("printers") {
+                PrinterListScreen(
+                    onBack = { navController.navigateUp() }
+                )
+            }
+        }
+    }
+
+    @Composable
+    fun MainContent(navController: androidx.navigation.NavController) {
         var wsPort by remember { mutableStateOf("8765") }
         var wsStatus by remember { mutableStateOf("Checking...") }
         var btStatus by remember { mutableStateOf("Checking...") }
@@ -210,12 +235,13 @@ class MainActivity : ComponentActivity() {
 
                     Button(
                         onClick = {
-                            Toast.makeText(this@MainActivity, "Searching for printers...", Toast.LENGTH_SHORT).show()
-                            // Trigger printer search
+                            navController.navigate("printers")
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Search Printers")
+                        Icon(Icons.Default.Print, contentDescription = "Printers")
+                        Spacer(Modifier.width(8.dp))
+                        Text("Manage Printers")
                     }
                 }
             }
@@ -229,10 +255,11 @@ class MainActivity : ComponentActivity() {
                     )
                     Text(
                         "1. Connect your thermal printer via Bluetooth\n" +
-                        "2. Note the WebSocket URL shown above\n" +
-                        "3. In your Laravel app, connect to the WebSocket\n" +
-                        "4. Use token: 'thermal-printer-2024'\n" +
-                        "5. Send print orders in JSON format",
+                        "2. Click 'Manage Printers' to search and save printers\n" +
+                        "3. Note the WebSocket URL shown above\n" +
+                        "4. In your Laravel app, connect to the WebSocket\n" +
+                        "5. Use token: 'thermal-printer-2024'\n" +
+                        "6. Send print orders in JSON format",
                         fontSize = 14.sp,
                         lineHeight = 18.sp
                     )
